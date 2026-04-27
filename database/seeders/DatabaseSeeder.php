@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Database\Seeders;
 
-use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use Modules\Cms\databases\seeders\CmsSeeder;
@@ -17,9 +16,11 @@ class DatabaseSeeder extends Seeder
      * Seed the application's database.
      *
      * Whole seed is local/testing only. Production never seeds — content
-     * comes from backoffice over /api/admin/cms/* and `pim:sync-full`,
-     * and the seed factories use fakerphp/faker which is a dev dependency
-     * (not present after `composer install --no-dev`).
+     * comes from backoffice over /api/admin/cms/* and `pim:sync-full`.
+     *
+     * No User seed — the shop has no auth, no login UI, no admin panel.
+     * The User model + migration are kept as a placeholder for future
+     * admin auth (see App\Models\User class docblock).
      */
     public function run(): void
     {
@@ -28,11 +29,6 @@ class DatabaseSeeder extends Seeder
 
             return;
         }
-
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
 
         $this->call(CmsSeeder::class);
     }
