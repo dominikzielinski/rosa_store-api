@@ -41,6 +41,7 @@ use Modules\Orders\Enums\PaymentMethodEnum;
  * @property string|null $backoffice_order_id
  * @property int $backoffice_sync_attempts
  * @property string|null $backoffice_last_error
+ * @property string|null $backoffice_pushed_status
  * @property string|null $ip_address
  * @property string|null $user_agent
  * @property Carbon $created_at

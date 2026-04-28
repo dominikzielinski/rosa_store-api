@@ -112,14 +112,15 @@ it('signs the register payload with SHA-384 of session+merchant+amount+currency+
     });
 });
 
-it('does not push to backoffice on register — waits for verified webhook', function () {
+it('pushes to backoffice on register (paymentStatus=pending)', function () {
     Http::fake([
         '*/api/v1/transaction/register' => Http::response(['data' => ['token' => 'tok']], 200),
     ]);
 
     postJson('/api/orders', p24OrderPayload(p24Box(p24Package())->id))->assertCreated();
 
-    Bus::assertNotDispatched(PushOrderToBackofficeJob::class);
+    // Order shows up in panel right away — paid push will follow after webhook.
+    Bus::assertDispatched(PushOrderToBackofficeJob::class);
 });
 
 it('returns 502 when P24 register fails', function () {
@@ -242,8 +243,9 @@ it('is idempotent — second webhook for same order is no-op', function () {
     postJson('/api/p24/webhook', $payload)->assertOk();
 
     expect($order->fresh()->p24_paid_at?->timestamp)->toBe($firstPaidAt?->timestamp);
-    // Push job dispatched only once
-    Bus::assertDispatchedTimes(PushOrderToBackofficeJob::class, 1);
+    // Two dispatches: one on order create (pending), one after first webhook (paid).
+    // The second webhook is a no-op (already paid), so still 2 — not 3.
+    Bus::assertDispatchedTimes(PushOrderToBackofficeJob::class, 2);
 });
 
 it('returns 502 when P24 verify rejects the payment', function () {

@@ -8,7 +8,6 @@ use App\Exceptions\ClientErrorException;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\QueryException;
 use Modules\Orders\DataTransferObjects\OrderStoreDto;
-use Modules\Orders\Enums\PaymentMethodEnum;
 use Modules\Orders\Jobs\PushOrderToBackofficeJob;
 use Modules\Orders\Models\Order;
 use Modules\Orders\Repositories\Interfaces\OrderRepositoryInterface;
@@ -45,12 +44,13 @@ readonly class OrderService
             }
         }
 
-        // Transfer flow — push to backoffice immediately so it can mail the customer
-        // with bank details. P24 flow waits for the webhook (Faza 3) before pushing.
-        // Dispatch outside the transaction so a rollback can never queue an orphan job.
-        if ($order->payment_method === PaymentMethodEnum::Transfer) {
-            PushOrderToBackofficeJob::dispatch($order->id);
-        }
+        // Always push to backoffice on create so the order shows up in the panel
+        // immediately, regardless of payment method. For p24 the initial push goes
+        // out with paymentStatus=pending; once the verified webhook arrives, we
+        // re-dispatch the job which sends paymentStatus=paid (backoffice idempotency
+        // upgrades pending→paid without duplicate invoice/email).
+        // Dispatched outside the transaction so a rollback can never queue an orphan.
+        PushOrderToBackofficeJob::dispatch($order->id);
 
         return $order;
     }

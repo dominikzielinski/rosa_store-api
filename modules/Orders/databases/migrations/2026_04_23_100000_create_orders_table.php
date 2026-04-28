@@ -54,6 +54,10 @@ return new class extends Migration
             $table->string('backoffice_order_id', 50)->nullable();
             $table->unsignedTinyInteger('backoffice_sync_attempts')->default(0);
             $table->text('backoffice_last_error')->nullable();
+            // Discriminator: which paymentStatus the order was last pushed with.
+            // Lets the upgrade pending→paid push happen exactly once when P24
+            // confirms payment; identical re-pushes are skipped.
+            $table->string('backoffice_pushed_status', 16)->nullable();
 
             // Audit metadata
             $table->string('ip_address', 45)->nullable();

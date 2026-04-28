@@ -78,7 +78,7 @@ it('dispatches push job after creating a transfer order', function () {
     Bus::assertDispatched(PushOrderToBackofficeJob::class);
 });
 
-it('does NOT dispatch push job for p24 order (waits for webhook)', function () {
+it('dispatches push job for p24 order on create (paymentStatus=pending)', function () {
     Bus::fake();
     Http::fake([
         '*/api/v1/transaction/register' => Http::response(['data' => ['token' => 'tok']], 200),
@@ -90,7 +90,9 @@ it('does NOT dispatch push job for p24 order (waits for webhook)', function () {
 
     postJson('/api/orders', $payload)->assertCreated();
 
-    Bus::assertNotDispatched(PushOrderToBackofficeJob::class);
+    // Push happens immediately so the order shows up in the panel — backoffice
+    // upgrades pending→paid when the verified P24 webhook arrives later.
+    Bus::assertDispatched(PushOrderToBackofficeJob::class);
 });
 
 // ─── Job execution: success ──────────────────────────────────────────────

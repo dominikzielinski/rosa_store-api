@@ -56,21 +56,37 @@ class PushOrderToBackofficeJob implements ShouldQueue
             return;
         }
 
-        if ($order->backoffice_synced_at !== null) {
-            // Already pushed (e.g. duplicate dispatch from race condition). No-op.
+        // `paymentStatus` we'll send in this push. The discriminator below ensures
+        // we re-push exactly once when this value changes (pending → paid for p24).
+        $currentPaymentStatus = $order->p24_paid_at !== null ? 'paid' : 'pending';
+
+        if ($order->backoffice_pushed_status === $currentPaymentStatus) {
+            // Already pushed with this exact paymentStatus — duplicate dispatch, no-op.
             return;
         }
 
         try {
             $response = $client->pushOrder($order->load('items'));
 
-            $order->forceFill([
-                'status' => OrderStatusEnum::Synced,
+            $updates = [
                 'backoffice_synced_at' => now(),
-                'backoffice_order_id' => $response['data']['backofficeOrderId'] ?? null,
+                'backoffice_order_id' => $response['data']['backofficeOrderId'] ?? $order->backoffice_order_id,
                 'backoffice_sync_attempts' => $order->backoffice_sync_attempts + 1,
                 'backoffice_last_error' => null,
-            ])->save();
+                'backoffice_pushed_status' => $currentPaymentStatus,
+            ];
+
+            // Mark as Synced (terminal — shop's job done) once the final state was pushed:
+            //   transfer: there's only one push (paymentStatus=pending), shop never sees paid
+            //             confirmation (operator marks it paid in backoffice manually).
+            //   p24:      synced after the paid push, not the initial pending one.
+            $isTerminalPush = $order->payment_method->value === 'transfer'
+                || $currentPaymentStatus === 'paid';
+            if ($isTerminalPush) {
+                $updates['status'] = OrderStatusEnum::Synced;
+            }
+
+            $order->forceFill($updates)->save();
         } catch (RequestException $e) {
             $status = $e->response?->status() ?? 0;
             $hint = "HTTP {$status}";

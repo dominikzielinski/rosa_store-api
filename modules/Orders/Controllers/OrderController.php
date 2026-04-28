@@ -124,11 +124,11 @@ class OrderController extends ApiController
 
         return rtrim($this->shopFrontendUrl(), '/')."/dziekujemy?{$params}";
     }
-	
-	/**
-	 * @throws ServerErrorException
-	 */
-	private function shopFrontendUrl(): string
+
+    /**
+     * @throws ServerErrorException
+     */
+    private function shopFrontendUrl(): string
     {
         $shopUrl = config('app.shop_frontend_url');
 
