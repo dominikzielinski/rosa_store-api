@@ -75,7 +75,7 @@ readonly class P24Client
             throw $e;
         }
 
-        IntegrationLogger::outboundResponse($response, microtime(true) - $start);
+        IntegrationLogger::outboundResponse($tag, $response, microtime(true) - $start);
 
         if (! $response->successful()) {
             throw new ServerErrorException(
@@ -140,7 +140,7 @@ readonly class P24Client
             throw $e;
         }
 
-        IntegrationLogger::outboundResponse($response, microtime(true) - $start);
+        IntegrationLogger::outboundResponse($tag, $response, microtime(true) - $start);
 
         if (! $response->successful()) {
             throw new ServerErrorException(

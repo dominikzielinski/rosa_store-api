@@ -36,17 +36,15 @@ return [
             'replace_placeholders' => true,
         ],
 
-        // Integration traffic — outbound (shop → backoffice, P24, etc.) and
-        // inbound (webhooks od backoffice / P24 / public order/contact submits).
-        // Separate from app logs so it's easy to grep when debugging an
-        // integration without the noise of the rest of the app.
-        'integrations' => [
-            'driver' => 'daily',
-            'path' => storage_path('logs/integrations.log'),
-            'level' => 'info',
-            'days' => env('LOG_INTEGRATIONS_DAYS', 14),
-            'replace_placeholders' => true,
-        ],
+        // Integration traffic split by service into `storage/logs/{service}/`.
+        // Channels are built dynamically by IntegrationLogger via Log::build()
+        // — the tag's prefix (text before first dot) becomes the folder name:
+        //   `p24.register #RD-1`        → storage/logs/p24/laravel-YYYY-MM-DD.log
+        //   `backoffice.pushOrder ...`  → storage/logs/backoffice/laravel-...log
+        //   `pim.pim_packages`          → storage/logs/pim/laravel-...log
+        //   `orders.store` (inbound)    → storage/logs/orders/laravel-...log
+        //   `panel.notify` (inbound)    → storage/logs/panel/laravel-...log
+        //   `admin.cms` (inbound)       → storage/logs/admin/laravel-...log
 
         'slack' => [
             'driver' => 'slack',

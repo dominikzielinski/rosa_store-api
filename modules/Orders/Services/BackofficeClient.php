@@ -67,7 +67,7 @@ readonly class BackofficeClient
             throw $e;
         }
 
-        IntegrationLogger::outboundResponse($response, microtime(true) - $start);
+        IntegrationLogger::outboundResponse($tag, $response, microtime(true) - $start);
 
         // Throws RequestException for 4xx/5xx — caller decides what to do.
         // Job handles retries; non-retryable 4xx logs + DLQ.

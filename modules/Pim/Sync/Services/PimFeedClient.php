@@ -104,7 +104,7 @@ readonly class PimFeedClient
             throw $e;
         }
 
-        IntegrationLogger::outboundResponse($response, microtime(true) - $start);
+        IntegrationLogger::outboundResponse($tag, $response, microtime(true) - $start);
 
         if ($response->status() === 404) {
             return null;
@@ -140,7 +140,7 @@ readonly class PimFeedClient
             throw $e;
         }
 
-        IntegrationLogger::outboundResponse($response, microtime(true) - $start);
+        IntegrationLogger::outboundResponse($tag, $response, microtime(true) - $start);
         $response->throw();
 
         $body = $response->json();
