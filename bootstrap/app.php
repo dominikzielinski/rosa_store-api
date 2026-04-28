@@ -21,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
             'backoffice' => VerifyBackofficeToken::class,
+            'log.integration' => \App\Http\Middleware\LogInboundIntegration::class,
         ]);
 
         // Trust reverse-proxy headers so $request->ip() returns the real client IP.

@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Modules\Orders\Services;
 
 use App\Exceptions\ServerErrorException;
+use App\Support\IntegrationLogger;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Response;
 use Modules\Orders\Models\Order;
+use Throwable;
 
 /**
  * HTTP wrapper for outbound sync to the backoffice app.
@@ -48,11 +50,24 @@ readonly class BackofficeClient
             throw new ServerErrorException('Backoffice URL must use HTTPS in production.', 503);
         }
 
-        $response = $this->http
-            ->withToken($token)
-            ->acceptJson()
-            ->timeout((int) config('backoffice.timeout', 10))
-            ->post($url, $this->buildPayload($order));
+        $payload = $this->buildPayload($order);
+        $tag = "backoffice.pushOrder #{$order->order_number}";
+
+        IntegrationLogger::outboundRequest($tag, 'POST', $url, $payload);
+        $start = microtime(true);
+
+        try {
+            $response = $this->http
+                ->withToken($token)
+                ->acceptJson()
+                ->timeout((int) config('backoffice.timeout', 10))
+                ->post($url, $payload);
+        } catch (Throwable $e) {
+            IntegrationLogger::outboundError($tag, $e);
+            throw $e;
+        }
+
+        IntegrationLogger::outboundResponse($response, microtime(true) - $start);
 
         // Throws RequestException for 4xx/5xx — caller decides what to do.
         // Job handles retries; non-retryable 4xx logs + DLQ.

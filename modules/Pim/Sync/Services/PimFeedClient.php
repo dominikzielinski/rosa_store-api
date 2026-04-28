@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Modules\Pim\Sync\Services;
 
 use App\Exceptions\ServerErrorException;
+use App\Support\IntegrationLogger;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
+use Throwable;
 
 /**
  * Read-only HTTP client for backoffice's PIM feed.
@@ -90,8 +92,19 @@ readonly class PimFeedClient
     private function getOne(string $pathKey, array $replace): ?array
     {
         $url = $this->buildUrl($pathKey, $replace);
+        $tag = "pim.{$pathKey}";
 
-        $response = $this->client()->get($url);
+        IntegrationLogger::outboundRequest($tag, 'GET', $url);
+        $start = microtime(true);
+
+        try {
+            $response = $this->client()->get($url);
+        } catch (Throwable $e) {
+            IntegrationLogger::outboundError($tag, $e);
+            throw $e;
+        }
+
+        IntegrationLogger::outboundResponse($response, microtime(true) - $start);
 
         if ($response->status() === 404) {
             return null;
@@ -115,7 +128,19 @@ readonly class PimFeedClient
     private function getList(string $pathKey): array
     {
         $url = $this->buildUrl($pathKey, []);
-        $response = $this->client()->get($url);
+        $tag = "pim.{$pathKey}";
+
+        IntegrationLogger::outboundRequest($tag, 'GET', $url);
+        $start = microtime(true);
+
+        try {
+            $response = $this->client()->get($url);
+        } catch (Throwable $e) {
+            IntegrationLogger::outboundError($tag, $e);
+            throw $e;
+        }
+
+        IntegrationLogger::outboundResponse($response, microtime(true) - $start);
         $response->throw();
 
         $body = $response->json();

@@ -36,6 +36,18 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Integration traffic — outbound (shop → backoffice, P24, etc.) and
+        // inbound (webhooks od backoffice / P24 / public order/contact submits).
+        // Separate from app logs so it's easy to grep when debugging an
+        // integration without the noise of the rest of the app.
+        'integrations' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/integrations.log'),
+            'level' => 'info',
+            'days' => env('LOG_INTEGRATIONS_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

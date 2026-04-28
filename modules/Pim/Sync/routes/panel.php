@@ -9,4 +9,5 @@ use Modules\Pim\Sync\Controllers\PanelNotifyController;
 // Auth via the same Bearer token used everywhere else (`backoffice.token`).
 // Route name prefix `panel.` is added by the RouteServiceProvider.
 Route::post('notify', [PanelNotifyController::class, 'store'])
+    ->middleware('log.integration:panel.notify')
     ->name('notify');

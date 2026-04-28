@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Modules\Orders\Services;
 
 use App\Exceptions\ServerErrorException;
+use App\Support\IntegrationLogger;
 use Illuminate\Http\Client\Factory as HttpFactory;
+use Throwable;
 
 /**
  * Przelewy24 REST API wrapper.
@@ -56,11 +58,24 @@ readonly class P24Client
             ),
         ];
 
-        $response = $this->http
-            ->withBasicAuth((string) $config['pos_id'], $config['reports_key'])
-            ->acceptJson()
-            ->timeout((int) $config['timeout'])
-            ->post($this->baseUrl().'/api/v1/transaction/register', $payload);
+        $url = $this->baseUrl().'/api/v1/transaction/register';
+        $tag = "p24.register #{$params->sessionId}";
+
+        IntegrationLogger::outboundRequest($tag, 'POST', $url, $payload);
+        $start = microtime(true);
+
+        try {
+            $response = $this->http
+                ->withBasicAuth((string) $config['pos_id'], $config['reports_key'])
+                ->acceptJson()
+                ->timeout((int) $config['timeout'])
+                ->post($url, $payload);
+        } catch (Throwable $e) {
+            IntegrationLogger::outboundError($tag, $e);
+            throw $e;
+        }
+
+        IntegrationLogger::outboundResponse($response, microtime(true) - $start);
 
         if (! $response->successful()) {
             throw new ServerErrorException(
@@ -108,11 +123,24 @@ readonly class P24Client
             ),
         ];
 
-        $response = $this->http
-            ->withBasicAuth((string) $config['pos_id'], $config['reports_key'])
-            ->acceptJson()
-            ->timeout((int) $config['timeout'])
-            ->put($this->baseUrl().'/api/v1/transaction/verify', $payload);
+        $url = $this->baseUrl().'/api/v1/transaction/verify';
+        $tag = "p24.verify #{$params->sessionId}";
+
+        IntegrationLogger::outboundRequest($tag, 'PUT', $url, $payload);
+        $start = microtime(true);
+
+        try {
+            $response = $this->http
+                ->withBasicAuth((string) $config['pos_id'], $config['reports_key'])
+                ->acceptJson()
+                ->timeout((int) $config['timeout'])
+                ->put($url, $payload);
+        } catch (Throwable $e) {
+            IntegrationLogger::outboundError($tag, $e);
+            throw $e;
+        }
+
+        IntegrationLogger::outboundResponse($response, microtime(true) - $start);
 
         if (! $response->successful()) {
             throw new ServerErrorException(

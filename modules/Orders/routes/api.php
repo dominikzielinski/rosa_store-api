@@ -9,7 +9,7 @@ use Modules\Orders\Controllers\OrderController;
 
 // Place order — public, rate-limited via the `orders` named limiter.
 Route::post('/', [OrderController::class, 'store'])
-    ->middleware('throttle:orders')
+    ->middleware(['throttle:orders', 'log.integration:orders.store'])
     ->name('store');
 
 // Polling status — public but reveals only non-PII status fields.

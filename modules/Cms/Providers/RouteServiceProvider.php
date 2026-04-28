@@ -19,7 +19,8 @@ class RouteServiceProvider extends Base
                 ->group(__DIR__.'/../routes/api.php');
 
             // Admin write endpoints (backoffice only) — names prefixed with `admin.cms.`
-            Route::middleware(['api', 'backoffice'])
+            // Logged to `integrations` channel since these are inbound BE→shop calls.
+            Route::middleware(['api', 'backoffice', 'log.integration:admin.cms'])
                 ->name('admin.cms.')
                 ->prefix('api/admin')
                 ->group(__DIR__.'/../Admin/routes/api.php');
