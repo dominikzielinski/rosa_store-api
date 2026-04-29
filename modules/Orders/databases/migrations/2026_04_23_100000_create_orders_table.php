@@ -47,6 +47,7 @@ return new class extends Migration
             $table->string('p24_session_id', 100)->nullable()->unique();
             $table->string('p24_token', 100)->nullable();
             $table->unsignedBigInteger('p24_order_id')->nullable();
+            $table->json('p24_notification_payload')->nullable();
             $table->timestamp('p24_paid_at')->nullable();
 
             // ── Backoffice sync state ──

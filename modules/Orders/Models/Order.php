@@ -36,6 +36,7 @@ use Modules\Orders\Enums\PaymentMethodEnum;
  * @property string|null $p24_session_id
  * @property string|null $p24_token
  * @property int|null $p24_order_id
+ * @property array<string, mixed>|null $p24_notification_payload
  * @property Carbon|null $p24_paid_at
  * @property Carbon|null $backoffice_synced_at
  * @property string|null $backoffice_order_id
@@ -91,6 +92,7 @@ class Order extends Model
             'billing_type' => BillingTypeEnum::class,
             'total_amount_pln' => 'integer',
             'p24_order_id' => 'integer',
+            'p24_notification_payload' => 'array',
             'p24_paid_at' => 'datetime:U',
             'consent_terms' => 'boolean',
             'consent_marketing' => 'boolean',

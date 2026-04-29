@@ -130,6 +130,7 @@ it('sends correct payload to backoffice', function () {
             && $request->hasHeader('Authorization', 'Bearer test-out-token')
             && $body['paymentMethod'] === 'transfer'
             && $body['paymentStatus'] === 'pending'
+            && array_key_exists('p24Notification', $body['paymentMeta'])
             && $body['billing']['email'] === 'jan@example.com'
             && count($body['items']) === 1;
     });

@@ -218,6 +218,11 @@ it('marks order paid + dispatches push on valid webhook', function () {
     expect($order->status)->toBe(OrderStatusEnum::Paid);
     expect($order->p24_paid_at)->not->toBeNull();
     expect($order->p24_order_id)->toBe(12345);
+    expect($order->p24_notification_payload)->toBeArray()
+        ->toHaveKeys(['merchantId', 'posId', 'sessionId', 'amount', 'currency', 'orderId', 'methodId'])
+        ->not->toHaveKey('sign');
+    expect($order->p24_notification_payload['orderId'])->toBe(12345);
+    expect($order->p24_notification_payload['statement'])->toBe('TR/12345');
     Bus::assertDispatched(PushOrderToBackofficeJob::class);
 });
 

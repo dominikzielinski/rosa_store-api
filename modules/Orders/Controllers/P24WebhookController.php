@@ -7,6 +7,7 @@ namespace Modules\Orders\Controllers;
 use App\Exceptions\ClientErrorException;
 use App\Exceptions\ServerErrorException;
 use App\Http\Controllers\ApiController;
+use App\Support\IntegrationLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use Modules\Orders\Enums\OrderStatusEnum;
@@ -44,6 +45,10 @@ class P24WebhookController extends ApiController
     public function __invoke(P24WebhookRequest $request): JsonResponse
     {
         $payload = $request->validated();
+        $tag = 'p24.webhook #'.($payload['sessionId'] ?? '?');
+
+        // Log the entire P24 notification payload
+        IntegrationLogger::inboundRequest($tag, $request);
 
         if (! $this->p24Client->verifyNotificationSignature($payload)) {
             Log::warning('P24 webhook: invalid signature', [
@@ -55,8 +60,6 @@ class P24WebhookController extends ApiController
         $order = Order::where('p24_session_id', $payload['sessionId'])->first();
 
         if (! $order) {
-            // Don't 200 unknown sessions — surface as 404 so P24 retries
-            // (their webhook retry handles transient race with order create).
             throw new ClientErrorException('Order not found.', 404);
         }
 
@@ -84,8 +87,12 @@ class P24WebhookController extends ApiController
             throw new ServerErrorException('P24 verify did not return success.', 502);
         }
 
+        // Store the full P24 notification (without sign — it's a one-time HMAC)
+        $notificationPayload = collect($payload)->except('sign')->all();
+
         $order->forceFill([
             'p24_order_id' => (int) $payload['orderId'],
+            'p24_notification_payload' => $notificationPayload,
             'p24_paid_at' => now(),
             'status' => OrderStatusEnum::Paid,
         ])->save();

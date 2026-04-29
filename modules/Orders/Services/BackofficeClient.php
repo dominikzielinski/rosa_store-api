@@ -92,6 +92,7 @@ readonly class BackofficeClient
                 'p24SessionId' => $order->p24_session_id,
                 'p24OrderId' => $order->p24_order_id,
                 'paidAt' => $order->p24_paid_at?->getTimestamp(),
+                'p24Notification' => $order->p24_notification_payload,
             ],
             'totalAmountPln' => $order->total_amount_pln,
             'items' => $order->items->map(fn ($item) => [
