@@ -136,6 +136,41 @@ it('sends correct payload to backoffice', function () {
     });
 });
 
+it('sends paymentStatus=cancelled for cancelled orders', function () {
+    Http::fake([
+        'backoffice.test/*' => Http::response(['data' => []], 200),
+    ]);
+
+    $box = pushBox(pushPackage());
+    postJson('/api/orders', pushOrderPayload($box->id))->assertCreated();
+
+    $order = Order::first();
+    $order->forceFill([
+        'status' => OrderStatusEnum::Cancelled,
+        'payment_method' => 'p24',
+        'p24_notification_payload' => ['source' => 'p24_status_check', 'p24Status' => 0],
+        'backoffice_pushed_status' => 'pending', // reset to allow next push
+    ])->save();
+
+    // Clear previous HTTP calls and re-fake
+    Http::clearResolvedInstances();
+    Http::fake([
+        'backoffice.test/*' => Http::response(['data' => []], 200),
+    ]);
+
+    PushOrderToBackofficeJob::dispatch($order->id);
+
+    Http::assertSent(function ($request) {
+        $body = $request->data();
+
+        return $body['paymentStatus'] === 'cancelled'
+            && $body['paymentMeta']['p24Notification']['source'] === 'p24_status_check';
+    });
+
+    // Status stays Cancelled — not overwritten with Synced
+    expect($order->fresh()->status)->toBe(OrderStatusEnum::Cancelled);
+});
+
 // ─── Job execution: errors ───────────────────────────────────────────────
 
 it('marks order sync_failed on 4xx (no retry)', function () {

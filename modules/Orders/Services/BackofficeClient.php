@@ -9,6 +9,7 @@ use App\Support\IntegrationLogger;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Http\Client\Response;
+use Modules\Orders\Enums\OrderStatusEnum;
 use Modules\Orders\Models\Order;
 use Throwable;
 
@@ -87,7 +88,7 @@ readonly class BackofficeClient
         return [
             'shopOrderNumber' => $order->order_number,
             'paymentMethod' => $order->payment_method->value,
-            'paymentStatus' => $order->p24_paid_at !== null ? 'paid' : 'pending',
+            'paymentStatus' => $this->resolvePaymentStatus($order),
             'paymentMeta' => [
                 'p24SessionId' => $order->p24_session_id,
                 'p24OrderId' => $order->p24_order_id,
@@ -129,6 +130,27 @@ readonly class BackofficeClient
                 'shopCreatedAt' => $order->created_at->getTimestamp(),
             ],
         ];
+    }
+
+    /**
+     * Derive the payment status string for the backoffice payload.
+     *
+     * Three possible values:
+     *   - 'paid'      — P24 webhook confirmed payment
+     *   - 'cancelled' — P24 transaction abandoned / no payment received
+     *   - 'pending'   — waiting for payment or backoffice push
+     */
+    private function resolvePaymentStatus(Order $order): string
+    {
+        if ($order->p24_paid_at !== null) {
+            return 'paid';
+        }
+
+        if ($order->status === OrderStatusEnum::Cancelled) {
+            return 'cancelled';
+        }
+
+        return 'pending';
     }
 
     /**

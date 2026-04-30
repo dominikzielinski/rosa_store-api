@@ -8,8 +8,11 @@ use App\Exceptions\ClientErrorException;
 use App\Exceptions\ServerErrorException;
 use App\Http\Controllers\ApiController;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 use Modules\Orders\DataTransferObjects\OrderStoreDto;
+use Modules\Orders\Enums\OrderStatusEnum;
 use Modules\Orders\Enums\PaymentMethodEnum;
+use Modules\Orders\Jobs\PushOrderToBackofficeJob;
 use Modules\Orders\Models\Order;
 use Modules\Orders\Repositories\Interfaces\OrderRepositoryInterface;
 use Modules\Orders\Requests\OrderStoreRequest;
@@ -71,6 +74,10 @@ class OrderController extends ApiController
     /**
      * Read-only public status check — used by FE polling on /platnosc/return.
      *
+     * When the order is still `pending_payment`, we ask P24 directly whether
+     * the transaction was paid or abandoned. P24 does NOT send a webhook for
+     * cancelled payments, so this is the only way to detect them promptly.
+     *
      * @throws ClientErrorException on unknown order number (404)
      *
      * @response array{data: OrderStatusResource}
@@ -79,7 +86,52 @@ class OrderController extends ApiController
     {
         $order = $this->orderRepository->getByOrderNumber($orderNumber);
 
+        if ($order->status === OrderStatusEnum::PendingPayment
+            && $order->p24_session_id
+            && $order->payment_method === PaymentMethodEnum::P24
+        ) {
+            $this->checkP24TransactionStatus($order);
+            $order->refresh();
+        }
+
         return $this->success(new OrderStatusResource($order));
+    }
+
+    /**
+     * Query P24 for transaction status and update the order accordingly.
+     *
+     * P24 status values: 0=no payment, 1=prepaid, 2=paid, 3=returned.
+     * When status=0 the user abandoned the payment — mark order cancelled
+     * and push the cancellation to backoffice.
+     */
+    private function checkP24TransactionStatus(Order $order): void
+    {
+        try {
+            $txn = $this->p24Client->findBySessionId($order->p24_session_id);
+        } catch (\Throwable $e) {
+            // P24 API unreachable — leave order as-is, FE will keep polling.
+            Log::warning('P24 status check failed', [
+                'order' => $order->order_number,
+                'error' => $e->getMessage(),
+            ]);
+
+            return;
+        }
+
+        $p24Status = (int) ($txn['status'] ?? -1);
+
+        if ($p24Status === P24Client::P24_STATUS_NO_PAYMENT) {
+            $order->forceFill([
+                'status' => OrderStatusEnum::Cancelled,
+                'p24_notification_payload' => [
+                    'source' => 'p24_status_check',
+                    'p24Status' => $p24Status,
+                    'checkedAt' => now()->toIso8601String(),
+                ],
+            ])->save();
+
+            PushOrderToBackofficeJob::dispatch($order->id);
+        }
     }
 
     /**

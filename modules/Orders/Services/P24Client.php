@@ -179,6 +179,60 @@ readonly class P24Client
         return $remote !== '' && hash_equals($expected, $remote);
     }
 
+    /**
+     * P24 transaction status constants (from GET /transaction/by/sessionId).
+     */
+    public const P24_STATUS_NO_PAYMENT = 0;
+
+    public const P24_STATUS_PREPAID = 1;
+
+    public const P24_STATUS_PAID = 2;
+
+    public const P24_STATUS_RETURNED = 3;
+
+    /**
+     * Look up a registered transaction by sessionId.
+     *
+     * Returns the P24-side status (0=no payment, 1=prepaid, 2=paid, 3=returned).
+     * Used to detect cancelled payments when P24 sends no webhook.
+     *
+     * @return array{orderId: int, sessionId: string, status: int, amount: int, currency: string, ...}
+     *
+     * @throws ServerErrorException
+     */
+    public function findBySessionId(string $sessionId): array
+    {
+        $config = $this->config();
+
+        $url = $this->baseUrl().'/api/v1/transaction/by/sessionId/'.$sessionId;
+        $tag = "p24.find #{$sessionId}";
+
+        IntegrationLogger::outboundRequest($tag, 'GET', $url, []);
+        $start = microtime(true);
+
+        try {
+            $response = $this->http
+                ->withBasicAuth((string) $config['pos_id'], $config['reports_key'])
+                ->acceptJson()
+                ->timeout((int) $config['timeout'])
+                ->get($url);
+        } catch (Throwable $e) {
+            IntegrationLogger::outboundError($tag, $e);
+            throw $e;
+        }
+
+        IntegrationLogger::outboundResponse($tag, $response, microtime(true) - $start);
+
+        if (! $response->successful()) {
+            throw new ServerErrorException(
+                'P24 find by sessionId failed: HTTP '.$response->status(),
+                502,
+            );
+        }
+
+        return $response->json('data') ?? [];
+    }
+
     private function signRegister(string $sessionId, int $amount, string $currency, string $crc): string
     {
         return hash('sha384', json_encode([

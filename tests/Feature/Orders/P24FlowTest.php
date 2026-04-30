@@ -14,6 +14,7 @@ use Modules\Orders\Services\P24VerifyParams;
 use Modules\Pim\Models\Box;
 use Modules\Pim\Models\Package;
 
+use function Pest\Laravel\getJson;
 use function Pest\Laravel\postJson;
 
 uses(RefreshDatabase::class);
@@ -272,6 +273,90 @@ it('returns 502 when P24 verify rejects the payment', function () {
     postJson('/api/p24/webhook', $payload)->assertStatus(502);
 
     expect($order->fresh()->p24_paid_at)->toBeNull();
+});
+
+// ─── Cancelled payment detection ─────────────────────────────────────────
+
+it('marks order cancelled when P24 status check returns no_payment', function () {
+    Http::fake([
+        '*/api/v1/transaction/register' => Http::response(['data' => ['token' => 'tok']], 200),
+        '*/api/v1/transaction/by/sessionId/*' => Http::response([
+            'data' => ['orderId' => 0, 'sessionId' => '', 'status' => 0, 'amount' => 35000, 'currency' => 'PLN'],
+        ], 200),
+    ]);
+
+    postJson('/api/orders', p24OrderPayload(p24Box(p24Package())->id))->assertCreated();
+    $order = Order::first();
+
+    expect($order->status)->toBe(OrderStatusEnum::PendingPayment);
+
+    // Simulate FE polling — triggers P24 status check
+    $response = getJson("/api/orders/{$order->order_number}/status")->assertOk();
+
+    $order->refresh();
+    expect($order->status)->toBe(OrderStatusEnum::Cancelled);
+    expect($order->p24_notification_payload['source'])->toBe('p24_status_check');
+    expect($response->json('data.status.id'))->toBe('cancelled');
+});
+
+it('dispatches backoffice push with cancelled status when P24 payment abandoned', function () {
+    Http::fake([
+        '*/api/v1/transaction/register' => Http::response(['data' => ['token' => 'tok']], 200),
+        '*/api/v1/transaction/by/sessionId/*' => Http::response([
+            'data' => ['orderId' => 0, 'sessionId' => '', 'status' => 0, 'amount' => 35000, 'currency' => 'PLN'],
+        ], 200),
+    ]);
+
+    postJson('/api/orders', p24OrderPayload(p24Box(p24Package())->id))->assertCreated();
+    $order = Order::first();
+
+    // Initial push was pending
+    Bus::assertDispatched(PushOrderToBackofficeJob::class);
+
+    // Status check triggers cancellation + second push
+    getJson("/api/orders/{$order->order_number}/status")->assertOk();
+
+    Bus::assertDispatchedTimes(PushOrderToBackofficeJob::class, 2);
+});
+
+it('does not re-cancel an already cancelled order on subsequent status checks', function () {
+    Http::fake([
+        '*/api/v1/transaction/register' => Http::response(['data' => ['token' => 'tok']], 200),
+        '*/api/v1/transaction/by/sessionId/*' => Http::response([
+            'data' => ['orderId' => 0, 'sessionId' => '', 'status' => 0, 'amount' => 35000, 'currency' => 'PLN'],
+        ], 200),
+    ]);
+
+    postJson('/api/orders', p24OrderPayload(p24Box(p24Package())->id))->assertCreated();
+    $order = Order::first();
+
+    // First status check → cancellation
+    getJson("/api/orders/{$order->order_number}/status")->assertOk();
+    expect($order->fresh()->status)->toBe(OrderStatusEnum::Cancelled);
+
+    // Second status check — order already cancelled, no P24 API call
+    Http::clearResolvedInstances();
+    Http::fake();
+
+    getJson("/api/orders/{$order->order_number}/status")->assertOk();
+
+    // No P24 API call was made (order is no longer pending_payment)
+    Http::assertNothingSent();
+});
+
+it('keeps order pending when P24 status check fails (network error)', function () {
+    Http::fake([
+        '*/api/v1/transaction/register' => Http::response(['data' => ['token' => 'tok']], 200),
+        '*/api/v1/transaction/by/sessionId/*' => Http::response('timeout', 503),
+    ]);
+
+    postJson('/api/orders', p24OrderPayload(p24Box(p24Package())->id))->assertCreated();
+    $order = Order::first();
+
+    // Status check fails gracefully — order stays pending
+    getJson("/api/orders/{$order->order_number}/status")->assertOk();
+
+    expect($order->fresh()->status)->toBe(OrderStatusEnum::PendingPayment);
 });
 
 // ─── P24Client unit ───────────────────────────────────────────────────────

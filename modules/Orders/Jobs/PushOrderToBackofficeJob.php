@@ -57,8 +57,12 @@ class PushOrderToBackofficeJob implements ShouldQueue
         }
 
         // `paymentStatus` we'll send in this push. The discriminator below ensures
-        // we re-push exactly once when this value changes (pending → paid for p24).
-        $currentPaymentStatus = $order->p24_paid_at !== null ? 'paid' : 'pending';
+        // we re-push exactly once when this value changes (pending → paid / cancelled for p24).
+        $currentPaymentStatus = match (true) {
+            $order->p24_paid_at !== null => 'paid',
+            $order->status === OrderStatusEnum::Cancelled => 'cancelled',
+            default => 'pending',
+        };
 
         if ($order->backoffice_pushed_status === $currentPaymentStatus) {
             // Already pushed with this exact paymentStatus — duplicate dispatch, no-op.
@@ -77,14 +81,17 @@ class PushOrderToBackofficeJob implements ShouldQueue
             ];
 
             // Mark as Synced (terminal — shop's job done) once the final state was pushed:
-            //   transfer: there's only one push (paymentStatus=pending), shop never sees paid
-            //             confirmation (operator marks it paid in backoffice manually).
-            //   p24:      synced after the paid push, not the initial pending one.
+            //   transfer:  there's only one push (paymentStatus=pending), shop never sees paid
+            //              confirmation (operator marks it paid in backoffice manually).
+            //   p24 paid:  synced after the paid push, not the initial pending one.
+            //   cancelled: no further transitions expected — backoffice received the info.
             $isTerminalPush = $order->payment_method->value === 'transfer'
-                || $currentPaymentStatus === 'paid';
-            if ($isTerminalPush) {
+                || $currentPaymentStatus === 'paid'
+                || $currentPaymentStatus === 'cancelled';
+            if ($isTerminalPush && $currentPaymentStatus !== 'cancelled') {
                 $updates['status'] = OrderStatusEnum::Synced;
             }
+            // For cancelled orders, status stays Cancelled — don't overwrite with Synced.
 
             $order->forceFill($updates)->save();
         } catch (RequestException $e) {
