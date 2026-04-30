@@ -74,6 +74,7 @@ class P24WebhookController extends ApiController
                 'expected' => $order->total_amount_pln,
                 'received' => $payload['amount'],
             ]);
+            $this->markWebhookRejected($order, $payload, 'amount_mismatch');
             throw new ClientErrorException('Amount mismatch.', 422);
         }
 
@@ -84,6 +85,7 @@ class P24WebhookController extends ApiController
         ));
 
         if (! $verified) {
+            $this->markWebhookRejected($order, $payload, 'verify_failed');
             throw new ServerErrorException('P24 verify did not return success.', 502);
         }
 
@@ -101,5 +103,27 @@ class P24WebhookController extends ApiController
         PushOrderToBackofficeJob::dispatch($order->id);
 
         return $this->success(message: 'Payment confirmed.');
+    }
+
+    /**
+     * Record a rejected webhook so the status-check endpoint can detect it
+     * and cancel the order instead of waiting for a 30-second timeout.
+     */
+    private function markWebhookRejected(Order $order, array $payload, string $reason): void
+    {
+        $order->forceFill([
+            'status' => OrderStatusEnum::Cancelled,
+            'p24_notification_payload' => [
+                'source' => 'webhook_rejected',
+                'reason' => $reason,
+                'receivedAmount' => $payload['amount'] ?? null,
+                'expectedAmount' => $order->total_amount_pln,
+                'orderId' => $payload['orderId'] ?? null,
+                'sessionId' => $payload['sessionId'] ?? null,
+                'rejectedAt' => now()->toIso8601String(),
+            ],
+        ])->save();
+
+        PushOrderToBackofficeJob::dispatch($order->id);
     }
 }

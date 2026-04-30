@@ -344,6 +344,77 @@ it('does not re-cancel an already cancelled order on subsequent status checks', 
     Http::assertNothingSent();
 });
 
+it('cancels order immediately on amount mismatch webhook', function () {
+    Http::fake([
+        '*/api/v1/transaction/register' => Http::response(['data' => ['token' => 'tok']], 200),
+        '*/api/v1/transaction/verify' => Http::response(['data' => ['status' => 'success']], 200),
+    ]);
+
+    postJson('/api/orders', p24OrderPayload(p24Box(p24Package())->id))->assertCreated();
+    $order = Order::first();
+
+    $payload = [
+        'merchantId' => 372297, 'posId' => 372297,
+        'sessionId' => $order->order_number, 'amount' => 1, 'originAmount' => 1,
+        'currency' => 'PLN', 'orderId' => 12345, 'methodId' => 1, 'statement' => 'foo',
+    ];
+    $payload['sign'] = p24SignNotification($payload, 'test-crc-key');
+
+    postJson('/api/p24/webhook', $payload)->assertStatus(422);
+
+    $order->refresh();
+    expect($order->status)->toBe(OrderStatusEnum::Cancelled);
+    expect($order->p24_notification_payload['source'])->toBe('webhook_rejected');
+    expect($order->p24_notification_payload['reason'])->toBe('amount_mismatch');
+
+    // FE status check immediately returns cancelled — no 30s wait
+    $response = getJson("/api/orders/{$order->order_number}/status")->assertOk();
+    expect($response->json('data.status.id'))->toBe('cancelled');
+});
+
+it('cancels order when P24 verify fails', function () {
+    Http::fake([
+        '*/api/v1/transaction/register' => Http::response(['data' => ['token' => 'tok']], 200),
+        '*/api/v1/transaction/verify' => Http::response(['data' => ['status' => 'failure']], 200),
+    ]);
+
+    postJson('/api/orders', p24OrderPayload(p24Box(p24Package())->id))->assertCreated();
+    $order = Order::first();
+
+    $payload = [
+        'merchantId' => 372297, 'posId' => 372297,
+        'sessionId' => $order->order_number, 'amount' => 35000, 'originAmount' => 35000,
+        'currency' => 'PLN', 'orderId' => 12345, 'methodId' => 1, 'statement' => 'TR/12345',
+    ];
+    $payload['sign'] = p24SignNotification($payload, 'test-crc-key');
+
+    postJson('/api/p24/webhook', $payload)->assertStatus(502);
+
+    $order->refresh();
+    expect($order->status)->toBe(OrderStatusEnum::Cancelled);
+    expect($order->p24_notification_payload['reason'])->toBe('verify_failed');
+
+    Bus::assertDispatched(PushOrderToBackofficeJob::class);
+});
+
+it('cancels order when P24 status check returns prepaid (unverified)', function () {
+    Http::fake([
+        '*/api/v1/transaction/register' => Http::response(['data' => ['token' => 'tok']], 200),
+        '*/api/v1/transaction/by/sessionId/*' => Http::response([
+            'data' => ['orderId' => 99, 'sessionId' => '', 'status' => 1, 'amount' => 35000, 'currency' => 'PLN'],
+        ], 200),
+    ]);
+
+    postJson('/api/orders', p24OrderPayload(p24Box(p24Package())->id))->assertCreated();
+    $order = Order::first();
+
+    getJson("/api/orders/{$order->order_number}/status")->assertOk();
+
+    $order->refresh();
+    expect($order->status)->toBe(OrderStatusEnum::Cancelled);
+    expect($order->p24_notification_payload['p24Status'])->toBe(1);
+});
+
 it('keeps order pending when P24 status check fails (network error)', function () {
     Http::fake([
         '*/api/v1/transaction/register' => Http::response(['data' => ['token' => 'tok']], 200),
