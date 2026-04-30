@@ -397,7 +397,7 @@ it('cancels order when P24 verify fails', function () {
     Bus::assertDispatched(PushOrderToBackofficeJob::class);
 });
 
-it('cancels order when P24 status check returns prepaid (unverified)', function () {
+it('keeps order pending when P24 status is prepaid (webhook may still arrive)', function () {
     Http::fake([
         '*/api/v1/transaction/register' => Http::response(['data' => ['token' => 'tok']], 200),
         '*/api/v1/transaction/by/sessionId/*' => Http::response([
@@ -410,9 +410,8 @@ it('cancels order when P24 status check returns prepaid (unverified)', function 
 
     getJson("/api/orders/{$order->order_number}/status")->assertOk();
 
-    $order->refresh();
-    expect($order->status)->toBe(OrderStatusEnum::Cancelled);
-    expect($order->p24_notification_payload['p24Status'])->toBe(1);
+    // Status=1 (prepaid) means money received — don't cancel, webhook may come.
+    expect($order->fresh()->status)->toBe(OrderStatusEnum::PendingPayment);
 });
 
 it('keeps order pending when P24 status check fails (network error)', function () {

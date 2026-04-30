@@ -102,17 +102,12 @@ class OrderController extends ApiController
      *
      * P24 status values: 0=no payment, 1=prepaid, 2=paid, 3=returned.
      *
-     * Cancel when:
-     *   - status=0 → user abandoned the payment (closed page, clicked back)
-     *   - status=1 → money received but we never verified it (amount mismatch,
-     *     verify failed, or webhook never reached us) — needs manual resolution
+     * Only cancel on status=0 (user abandoned — no payment at all).
+     * Status=1 (prepaid) means P24 received money but we haven't verified yet —
+     * the webhook may still arrive, so we leave the order as pending_payment.
      */
     private function checkP24TransactionStatus(Order $order): void
     {
-        // If the webhook already rejected this order (amount mismatch / verify fail),
-        // status was set to Cancelled there — no need to call P24 again.
-        // The guard in status() (pending_payment check) prevents re-entry.
-
         try {
             $txn = $this->p24Client->findBySessionId($order->p24_session_id);
         } catch (\Throwable $e) {
@@ -127,9 +122,7 @@ class OrderController extends ApiController
 
         $p24Status = (int) ($txn['status'] ?? -1);
 
-        if ($p24Status === P24Client::P24_STATUS_NO_PAYMENT
-            || $p24Status === P24Client::P24_STATUS_PREPAID
-        ) {
+        if ($p24Status === P24Client::P24_STATUS_NO_PAYMENT) {
             $order->forceFill([
                 'status' => OrderStatusEnum::Cancelled,
                 'p24_notification_payload' => [
