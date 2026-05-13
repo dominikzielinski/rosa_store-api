@@ -35,6 +35,7 @@ final readonly class OrderStoreDto
 
         public ?string $ipAddress,
         public ?string $userAgent,
+        public ?string $metaEventId,
     ) {}
 
     public static function fromRequest(OrderStoreRequest $request): self
@@ -67,6 +68,7 @@ final readonly class OrderStoreDto
 
             ipAddress: $request->ip(),
             userAgent: substr((string) $request->userAgent(), 0, 500) ?: null,
+            metaEventId: $v['metaEventId'] ?? null,
         );
     }
 

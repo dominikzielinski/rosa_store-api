@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Modules\Orders\Services;
 
 use App\Exceptions\ClientErrorException;
+use App\Jobs\SendMetaConversionJob;
 use Illuminate\Database\DatabaseManager;
 use Illuminate\Database\QueryException;
 use Modules\Orders\DataTransferObjects\OrderStoreDto;
+use Modules\Orders\Enums\PaymentMethodEnum;
 use Modules\Orders\Jobs\PushOrderToBackofficeJob;
 use Modules\Orders\Models\Order;
 use Modules\Orders\Repositories\Interfaces\OrderRepositoryInterface;
@@ -51,6 +53,17 @@ readonly class OrderService
         // upgrades pending→paid without duplicate invoice/email).
         // Dispatched outside the transaction so a rollback can never queue an orphan.
         PushOrderToBackofficeJob::dispatch($order->id);
+
+        // For transfer orders, Purchase fires at order creation (no automatic bank
+        // confirmation exists in the current flow — P24 has its own webhook for that).
+        // eventId = meta_event_id from the frontend, enables browser+server deduplication.
+        if ($dto->paymentMethod === PaymentMethodEnum::Transfer) {
+            SendMetaConversionJob::dispatch(
+                eventName: 'Purchase',
+                orderId: $order->id,
+                eventId: $order->meta_event_id,
+            );
+        }
 
         return $order;
     }
@@ -128,6 +141,7 @@ readonly class OrderService
 
                 'ip_address' => $dto->ipAddress,
                 'user_agent' => $dto->userAgent,
+                'meta_event_id' => $dto->metaEventId,
             ]);
 
             $order->items()->createMany($itemsForInsert);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Modules\Contact\Controllers;
 
 use App\Http\Controllers\ApiController;
+use App\Jobs\SendMetaConversionJob;
 use Illuminate\Http\JsonResponse;
 use Modules\Contact\DataTransferObjects\ContactSubmissionStoreDto;
 use Modules\Contact\Requests\ContactSubmissionStoreRequest;
@@ -41,7 +42,17 @@ class ContactSubmissionController extends ApiController
         }
 
         $dto = ContactSubmissionStoreDto::fromRequest($request);
-        $this->contactSubmissionService->store($dto);
+        $submission = $this->contactSubmissionService->store($dto);
+
+        // Server-side Lead event for Meta CAPI — only when marketing consent given.
+        // eventId uses the DB id (stable across retries, collision-safe across submissions).
+        if ($submission->consent_marketing) {
+            SendMetaConversionJob::dispatch(
+                eventName: 'Lead',
+                contactSubmissionId: $submission->id,
+                eventId: "lead-{$submission->id}",
+            );
+        }
 
         return $this->created(
             [],

@@ -45,6 +45,7 @@ use Modules\Orders\Enums\PaymentMethodEnum;
  * @property string|null $backoffice_pushed_status
  * @property string|null $ip_address
  * @property string|null $user_agent
+ * @property string|null $meta_event_id
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property Carbon|null $deleted_at
@@ -82,6 +83,7 @@ class Order extends Model
 
         'ip_address',
         'user_agent',
+        'meta_event_id',
     ];
 
     protected function casts(): array

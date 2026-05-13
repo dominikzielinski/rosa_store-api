@@ -7,6 +7,7 @@ namespace Modules\Orders\Controllers;
 use App\Exceptions\ClientErrorException;
 use App\Exceptions\ServerErrorException;
 use App\Http\Controllers\ApiController;
+use App\Jobs\SendMetaConversionJob;
 use App\Support\IntegrationLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
@@ -101,6 +102,14 @@ class P24WebhookController extends ApiController
 
         // Now that the payment is confirmed, push to backoffice.
         PushOrderToBackofficeJob::dispatch($order->id);
+
+        // Server-side Purchase event for Meta CAPI deduplication.
+        // eventId = meta_event_id set by the frontend at checkout — matches the browser Pixel event.
+        SendMetaConversionJob::dispatch(
+            eventName: 'Purchase',
+            orderId: $order->id,
+            eventId: $order->meta_event_id,
+        );
 
         return $this->success(message: 'Payment confirmed.');
     }
